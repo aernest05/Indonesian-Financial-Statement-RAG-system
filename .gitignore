@@ -1,0 +1,8 @@
+venv
+data
+chroma_langchain_db
+.vscode
+__pycache__
+claude_workings
+*.ipynb
+
