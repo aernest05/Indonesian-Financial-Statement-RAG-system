@@ -5,54 +5,17 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
 llm = ChatOpenAI(
-    api_key=os.environ.get("DEEPSEEK_API_KEY"), 
+    api_key=os.environ.get("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
-    model="deepseek-chat",  # Specify DeepSeek model
+    model="deepseek-chat",
     temperature=0.7)
 
-def preprocess_query(query):
-    QUERY_PROCESSING_PROMPT = ChatPromptTemplate.from_template("""
-    You are a query pre-processor for a RAG system. Your job is to:
-    1. Extract the year(s) the user is asking about
-    2. Rewrite the query to be more specific for retrieval
-
-    Current year: 2026
-
-    User query: {query}
-
-    Output ONLY valid JSON in this format:
-    {{
-        "extracted_years": [2025],
-        "rewritten_query": "BCA financial performance 2025 revenue profit assets",
-        "operator": "exact"  // one of: "exact", "range", "gte", "lte", "none"
-    }}
-
-    Examples:
-    - Query: "How did BCA perform last year?" → {{"extracted_years": [2025], "rewritten_query": "BCA financial performance 2025", "operator": "exact"}}
-    - Query: "BCA Q4 results" → {{"extracted_years": [2025], "rewritten_query": "BCA Q4 fourth quarter results 2025", "operator": "exact"}}
-    - Query: "Compare 2024 and 2025 BCA" → {{"extracted_years": [2024, 2025], "rewritten_query": "BCA compare 2024 2025 financial performance", "operator": "exact"}}
-    - Query: "BCA since 2023" → {{"extracted_years": [2023], "rewritten_query": "BCA financial performance", "operator": "gte"}}
-    - Query: "What is BCA's performance in 2025?" → {{"extracted_years": [2025], "rewritten_query": "BCA financial performance 2025", "operator": "exact"}}
-    """)
-
-    response = llm.invoke(QUERY_PROCESSING_PROMPT.format(query=query))
-    try:
-        # Extract JSON from markdown code blocks if present
-        content = response.content
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-    except:
-        pass
-    
-    # Fallback
-    return {"extracted_years": [], "rewritten_query": query, "operator": "none"}
 
 def get_year_filter(years: list, operator: str) -> dict:
     """Convert extracted years to vectorstore filter"""
     if not years:
         return {}
-    
+
     if operator == "exact":
         if len(years) == 1:
             return {"year": years[0]}
@@ -65,37 +28,91 @@ def get_year_filter(years: list, operator: str) -> dict:
     else:
         return {}
 
-def retrieve_with_preprocessing(user_query: str, retriever, vectorstore=None):
-    """Full pipeline: preprocess → filter → retrieve"""
-    
-    # Step 1: Preprocess query
-    processed = preprocess_query(user_query)
-    rewritten_query = processed.get("rewritten_query", user_query)
-    extracted_years = processed.get("extracted_years", [])
-    operator = processed.get("operator", "none")
-    
-    print(f"Original query: {user_query}")
-    print(f"Rewritten query: {rewritten_query}")
-    print(f"Extracted years: {extracted_years}")
-    debug_info = {
-        "original_query": user_query,
-        "rewritten_query": rewritten_query,
-        "extracted_years": extracted_years,
-        "operator": operator
-    }
-    
-    # Step 2: Apply year filter if vectorstore is available
-    if vectorstore and extracted_years:
-        year_filter = get_year_filter(extracted_years, operator)
-        if year_filter:
-            # Use filtered search
-            docs = vectorstore.similarity_search(
-                rewritten_query, 
-                k=5, 
-                filter=year_filter
-            )
-            return docs, extracted_years, debug_info
-    else:
-        # Use standard retriever
-        docs = retriever.invoke(rewritten_query)
-        return docs, extracted_years,debug_info
+
+PROCESS_QUERY_PROMPT = ChatPromptTemplate.from_template("""You are a query pre-processor for a financial RAG system. Given a user question, do two things in one step:
+1. Extract any year(s) the user is asking about and determine the year filter operator.
+2. Decompose the question into 1-3 focused sub-questions suitable for document retrieval.
+
+Current year: 2026
+
+User query: {query}
+
+Output ONLY valid JSON in this exact format:
+{{
+    "extracted_years": [2025],
+    "operator": "exact",
+    "sub_queries": [
+        "BCA total revenue and net profit 2025",
+        "BCA return on equity and assets 2025"
+    ]
+}}
+
+Rules for extracted_years and operator:
+- "exact"  → user asks about specific year(s). Use $in if multiple.
+- "gte"    → user asks about a year and onwards (e.g. "since 2023").
+- "lte"    → user asks up to a year (e.g. "before 2025").
+- "none"   → no year mentioned; set extracted_years to [].
+
+Rules for sub_queries:
+- Each sub-question must be self-contained and address a specific aspect.
+- Include the year in each sub-question when a year was extracted.
+- Use at most 3 sub-questions; 1 is fine for simple queries.
+
+Examples:
+- Query: "How did BCA perform last year?"
+  output: {{"extracted_years": [2025], "operator": "exact", "sub_queries": ["BCA financial performance and revenue 2025", "BCA net profit and margins 2025"]}}
+- Query: "Compare BCA 2024 and 2025"
+  output: {{"extracted_years": [2024, 2025], "operator": "exact", "sub_queries": ["BCA revenue and profit 2024", "BCA revenue and profit 2025", "BCA year-over-year growth 2024 2025"]}}
+- Query: "BCA since 2023"
+  output: {{"extracted_years": [2023], "operator": "gte", "sub_queries": ["BCA financial performance 2023 onwards"]}}
+- Query: "What are BCA's main risks?"
+  output: {{"extracted_years": [], "operator": "none", "sub_queries": ["BCA risk factors", "BCA credit risk and operational risk"]}}
+""")
+
+
+def process_query(query: str) -> dict:
+    """Single LLM call: year extraction + operator + query decomposition.
+
+    Replaces the former preprocess_query + decompose_query pair.
+
+    Returns:
+        {
+            "extracted_years": list[int],
+            "operator": str,   # "exact" | "gte" | "lte" | "none"
+            "sub_queries": list[str],
+        }
+    """
+    try:
+        response = llm.invoke(PROCESS_QUERY_PROMPT.format(query=query))
+        content = response.content
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group())
+            sub_queries = data.get("sub_queries", [])
+            if not sub_queries:
+                sub_queries = [query]
+            return {
+                "extracted_years": data.get("extracted_years", []),
+                "operator": data.get("operator", "none"),
+                "sub_queries": sub_queries,
+            }
+    except Exception as e:
+        print(f"[process_query] Warning: {e}")
+    return {"extracted_years": [], "operator": "none", "sub_queries": [query]}
+
+
+HYDE_PROMPT = ChatPromptTemplate.from_template("""Write a short paragraph (3-5 sentences) that reads like an extract from a company financial report and directly answers the following question. Use formal financial language.
+
+Question: {query}
+
+Answer:""")
+
+
+def generate_hyde_hypothesis(query: str) -> str:
+    """Generate a hypothetical document that would answer the query (HyDE, FinSage §3.2)."""
+    try:
+        response = llm.invoke(HYDE_PROMPT.format(query=query))
+        return response.content.strip()
+    except Exception as e:
+        print(f"[HyDE] Warning: {e}")
+        return query

@@ -2,6 +2,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
+from preprocessing import run_ffp_pipeline
 import os
 
 embeddings = GoogleGenerativeAIEmbeddings(
@@ -23,15 +24,25 @@ def split_documents(file_path):
     )
     return text_splitter.split_documents(documents)
 
-def embed_documents(file_path):
-    """Embed new documents and store in vector database."""
-    documents = split_documents(file_path)
+def embed_documents(file_path, apply_ffp: bool = True):
+    """Embed new documents and store in vector database.
+
+    When apply_ffp=True the Financial Filings Pre-processing pipeline
+    (FinSage §3.1) is run before embedding:
+      1. Near-duplicate chunk removal (TF-IDF cosine similarity)
+      2. Co-reference resolution (LLM replaces pronouns with antecedents)
+      3. Section-summary metadata generation (LLM summarises each page)
+    """
+    chunks = split_documents(file_path)
+
+    if apply_ffp:
+        chunks = run_ffp_pipeline(chunks)
 
     db = Chroma(
         persist_directory="chroma_langchain_db",
         embedding_function=embeddings,
     )
-    db.add_documents(documents)
+    db.add_documents(chunks)
 
 def setup_retriever():
     """Initialize embeddings and create retriever (internal)."""
