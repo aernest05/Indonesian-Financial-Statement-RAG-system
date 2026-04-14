@@ -10,6 +10,12 @@ llm = ChatOpenAI(
     model="deepseek-chat",
     temperature=0.7)
 
+class QueryResult:
+    def __init__(self, extracted_years: list[int], operator: str, sub_queries: list[str]):
+        self.extracted_years = extracted_years
+        self.operator = operator
+        self.sub_queries = sub_queries
+
 
 def get_year_filter(years: list, operator: str) -> dict:
     """Convert extracted years to vectorstore filter"""
@@ -57,6 +63,7 @@ Rules for sub_queries:
 - Each sub-question must be self-contained and address a specific aspect.
 - Include the year in each sub-question when a year was extracted.
 - Use at most 3 sub-questions; 1 is fine for simple queries.
+- Use Indonesian Language
 
 Examples:
 - Query: "How did BCA perform last year?"
@@ -70,8 +77,8 @@ Examples:
 """)
 
 
-def process_query(query: str) -> dict:
-    """Single LLM call: year extraction + operator + query decomposition.
+def process_query(query: str) -> QueryResult:
+    """Single LLM call: year extraction + operator + query decomposition. 
 
     Replaces the former preprocess_query + decompose_query pair.
 
@@ -91,21 +98,22 @@ def process_query(query: str) -> dict:
             sub_queries = data.get("sub_queries", [])
             if not sub_queries:
                 sub_queries = [query]
-            return {
-                "extracted_years": data.get("extracted_years", []),
-                "operator": data.get("operator", "none"),
-                "sub_queries": sub_queries,
-            }
+        return QueryResult(
+            extracted_years = data.get("extracted_years", []),
+            operator = data.get("operator", "none"),
+            sub_queries = sub_queries
+            )
     except Exception as e:
         print(f"[process_query] Warning: {e}")
-    return {"extracted_years": [], "operator": "none", "sub_queries": [query]}
+    return QueryResult([],"",[query])
 
 
 HYDE_PROMPT = ChatPromptTemplate.from_template("""Write a short paragraph (3-5 sentences) that reads like an extract from a company financial report and directly answers the following question. Use formal financial language.
 
 Question: {query}
 
-Answer:""")
+Answer:
+Respond in Indonesian.""")
 
 
 def generate_hyde_hypothesis(query: str) -> str:

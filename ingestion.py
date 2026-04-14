@@ -2,55 +2,120 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
+from langchain_core.documents import Document
 from preprocessing import run_ffp_pipeline
 import os
+import re
 
-embeddings = GoogleGenerativeAIEmbeddings(
-        api_key=os.environ.get("GEMINI_API_KEY_PERSONAL"), ## ignore
-        model="gemini-embedding-2-preview"
+
+def setup_retriever(chroma_db_dir: str = "chroma_langchain_db"):
+    """Initialize embeddings and create retriever (internal)."""
+    # Load or create database
+    print(chroma_db_dir)
+    embeddings = GoogleGenerativeAIEmbeddings(
+                api_key=os.environ.get("GEMINI_API_KEY_PERSONAL",""), ## ignore
+                model="gemini-embedding-2-preview"
+            )
+    
+    db = Chroma(
+        persist_directory= chroma_db_dir,
+        embedding_function=embeddings,
     )
+    return db
+
+
+SECTION_MAP = {
+    "4220000": "balance_sheet",
+    "4322000": "income_statement",
+    "4510000": "cash_flow",
+    "4610000": "accounting_policy",
+    "4631100": "notes_interest_income",
+    "4632100": "notes_interest_expense",
+    "4613100": "notes_loans",
+}
+
+
+def _classify_section(section_id):
+    for key, val in SECTION_MAP.items():
+        if section_id.startswith(key[:5]):
+            return val
+    return "other"
+
+
+def _parse_filename(file_path):
+    # FinancialStatement-2024-II-BBCA.pdf
+    name = file_path.split("/")[-1].replace(".pdf", "")
+    parts = name.split("-")
+
+    period_map = {"I": "Q1", "II": "Q2", "III": "Q3", "Tahunan": "Annual"}
+
+    return {
+        "year": int(parts[1]),
+        "period": period_map.get(parts[2], parts[2]),
+        "ticker": parts[3],
+        "source": file_path,
+    }
+
 
 def split_documents(file_path):
     loader = PyPDFLoader(file_path)
-    documents = loader.load()
+    pages = loader.load()
+    file_meta = _parse_filename(file_path)
 
-    for doc in documents:
-        meta = doc.metadata
-        source_parts = meta["source"].split("-")
-        meta["year"] = int(source_parts[1])
+    # Combine all pages into one text
+    full_text = "\n".join([p.page_content for p in pages])
 
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size = 800
-    )
-    return text_splitter.split_documents(documents)
+    # Split by XBRL section headers
+    pattern = r'(\[\d{7}[^\]]*\])'
+    parts = re.split(pattern, full_text)
 
-def embed_documents(file_path, apply_ffp: bool = True):
+    docs = []
+    for i in range(1, len(parts), 2):
+        section_id_raw = parts[i].strip("[]")
+        content = parts[i+1].strip() if i+1 < len(parts) else ""
+
+        if not content:
+            continue
+
+        section_type = _classify_section(section_id_raw)
+
+        # Build embed-friendly text
+        embed_text = f"""
+Ticker: {file_meta['ticker']}
+Year: {file_meta['year']} | Period: {file_meta['period']}
+Section: {section_type}
+---
+{content}
+""".strip()
+
+        metadata = {
+            **file_meta,
+            "section_id": section_id_raw,
+            "section_type": section_type,
+        }
+
+        docs.append(Document(page_content=embed_text, metadata=metadata))
+
+    return docs
+
+
+def embed_documents(file_path,chroma_db_dir: str = "chroma_langchain_db" ,apply_ffp: bool = False):
     """Embed new documents and store in vector database.
 
     When apply_ffp=True the Financial Filings Pre-processing pipeline
     (FinSage §3.1) is run before embedding:
-      1. Near-duplicate chunk removal (TF-IDF cosine similarity)
-      2. Co-reference resolution (LLM replaces pronouns with antecedents)
-      3. Section-summary metadata generation (LLM summarises each page)
+    1. Near-duplicate chunk removal (TF-IDF cosine similarity)
+    2. Co-reference resolution (LLM replaces pronouns with antecedents)
+    3. Section-summary metadata generation (LLM summarises each page)
     """
     chunks = split_documents(file_path)
 
     if apply_ffp:
         chunks = run_ffp_pipeline(chunks)
 
-    db = Chroma(
-        persist_directory="chroma_langchain_db",
-        embedding_function=embeddings,
-    )
+    db = setup_retriever(chroma_db_dir)
+
     db.add_documents(chunks)
 
-def setup_retriever():
-    """Initialize embeddings and create retriever (internal)."""
-    # Load or create database
-    db = Chroma(
-        persist_directory="chroma_langchain_db",
-        embedding_function=embeddings,
-    )
-    return db
 
 
