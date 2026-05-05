@@ -147,7 +147,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Quick prompts ─────────────────────────────────────────────────────────────
-c1, c2, c3 = st.columns(4)
+c1, c2, c3 = st.columns(3)
 with c1:
     if st.button("BCA performance 2024"):
         set_prompt("How did BCA perform in 2024?")
