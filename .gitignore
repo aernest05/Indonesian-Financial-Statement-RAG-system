@@ -3,6 +3,7 @@ data
 chroma_langchain_db
 .vscode
 __pycache__
+.streamlit/secrets.toml
 claude_workings
 *.ipynb
 
