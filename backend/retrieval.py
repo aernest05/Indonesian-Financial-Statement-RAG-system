@@ -10,10 +10,10 @@ Implements FinSage §3.2 and §3.3 without re-embedding stored documents:
   - Time bonus                       (year metadata → recency boost)
 """
 
-import os
 import json as _json
 import requests
 from datetime import datetime
+import streamlit as st
 from backend.ingestion import setup_retriever
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
@@ -27,12 +27,18 @@ from backend.query_processing import (
 )
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
-llm = ChatOpenAI(
-    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-    base_url="https://api.deepseek.com",
-    model="deepseek-chat",
-    temperature=0.7,
-)
+_llm = None
+
+def _get_llm():
+    global _llm
+    if _llm is None:
+        _llm = ChatOpenAI(
+            api_key=st.secrets['DEEPSEEK_API_KEY'],
+            base_url="https://api.deepseek.com",
+            model="deepseek-chat",
+            temperature=0.7,
+        )
+    return _llm
 # ── LangSearch reranker ───────────────────────────────────────────────────────
 
 def _langsearch_rerank(query: str, documents: list[str], k: int = 10) -> list[float]:
@@ -46,7 +52,7 @@ def _langsearch_rerank(query: str, documents: list[str], k: int = 10) -> list[fl
         "documents": documents,
     })
     headers = {
-        "Authorization": f"Bearer {os.environ.get('LANGSEARCH_API_KEY', '')}",
+        "Authorization": f"Bearer {st.secrets['LANGSEARCH_API_KEY']}",
         "Content-Type": "application/json",
     }
     response = requests.post(url, headers=headers, data=payload)
@@ -234,7 +240,8 @@ def prepare_retrieval(question: str) -> dict:
         year_hint=year_hint,
         enable_bm25_retrieve=False,
         enable_metadata=False,
-        enable_expansion=False,
+        enable_hyde=True,
+        enable_expansion=False
     )
     t_retrieval = time.perf_counter()
 
@@ -263,7 +270,7 @@ def stream_answer(question: str, retrieval: dict):
     import time
 
     prompt = _ANSWER_PROMPT.format(context=retrieval["context"], input=question)
-    for chunk in llm.stream(prompt):
+    for chunk in _get_llm().stream(prompt):
         yield chunk.content
 
     t_llm = time.perf_counter()

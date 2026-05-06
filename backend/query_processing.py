@@ -1,14 +1,15 @@
 import re
-import os
 import json
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+import streamlit as st
 
 llm = ChatOpenAI(
-    api_key=os.environ.get("DEEPSEEK_API_KEY"),
+    api_key=st.secrets['DEEPSEEK_API_KEY'],
     base_url="https://api.deepseek.com",
     model="deepseek-chat",
-    temperature=0.7)
+    temperature=0.7,
+)
 
 class QueryResult:
     def __init__(self, extracted_years: list[int], operator: str, sub_queries: list[str]):
@@ -91,7 +92,7 @@ def process_query(query: str) -> QueryResult:
     """
     try:
         response = llm.invoke(PROCESS_QUERY_PROMPT.format(query=query))
-        content = response.content
+        content = str(response.content)
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
             data = json.loads(json_match.group())
