@@ -220,7 +220,7 @@ def prepare_retrieval(question: str) -> dict:
     import time
 
     t0 = time.perf_counter()
-    db = setup_retriever("financial_statement_db")
+    db = setup_retriever()
     t_db = time.perf_counter()
 
     processed = process_query(question)

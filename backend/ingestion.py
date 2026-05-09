@@ -6,7 +6,7 @@ import os
 import re
 
 
-def setup_retriever(chroma_db_dir: str = "chroma_langchain_db"):
+def setup_retriever(chroma_db_dir: str = "financial_statements_db"):
     """Initialize embeddings and create retriever """
     # Load or create database
     print(chroma_db_dir)
@@ -111,6 +111,7 @@ def embed_documents(file_path,chroma_db_dir: str = "chroma_langchain_db" ,apply_
     db = setup_retriever(chroma_db_dir)
 
     db.add_documents(chunks)
+
 
 if __name__ == "__main__":
     db_name = "financial_statements_db"
