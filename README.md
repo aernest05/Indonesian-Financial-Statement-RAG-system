@@ -4,7 +4,7 @@
 
 FinSage is a Retrieval-Augmented Generation (RAG) system for querying Indonesian public company financial reports in natural language. Ask questions about revenue, profit, balance sheet items, risk factors, and more — and get answers grounded in the actual filings.
 
-> **Current data coverage: BCA (BBCA) only.**
+> **Current data coverage: BCA,BRI,MANDIRI,BNI**
 > Support for additional Indonesian stocks (IDX-listed companies) is actively in development and will be rolled out in the near future.
 
 ---
