@@ -2,10 +2,10 @@ import re
 import json
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-import streamlit as st
+import os
 
 llm = ChatOpenAI(
-    api_key=st.secrets['DEEPSEEK_API_KEY'],
+    api_key=os.environ.get('DEEPSEEK_API_KEY',""),
     base_url="https://api.deepseek.com",
     model="deepseek-chat",
     temperature=0.7,

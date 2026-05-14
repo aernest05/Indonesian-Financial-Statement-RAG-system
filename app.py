@@ -2,11 +2,6 @@ import streamlit as st
 from backend.retrieval import prepare_retrieval, stream_answer
 import os
 
-# Inject Streamlit secrets into os.environ for deployment compatibility
-for key in ["DEEPSEEK_API_KEY", "GEMINI_API_KEY_PERSONAL", "LANGSEARCH_API_KEY"]:
-    if key in st.secrets:
-        os.environ[key] = st.secrets[key]
-
 if "user_question" not in st.session_state:
     st.session_state.user_question = ""
 

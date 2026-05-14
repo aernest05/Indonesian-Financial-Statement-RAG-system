@@ -18,6 +18,7 @@ from backend.ingestion import setup_retriever
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+import os
 
 from backend.retrieval_methods import _hyde_retrieve, _bm25_retrieve, _metadata_retrieve, _dense_retrieve
 
@@ -33,7 +34,7 @@ def _get_llm():
     global _llm
     if _llm is None:
         _llm = ChatOpenAI(
-            api_key=st.secrets['DEEPSEEK_API_KEY'],
+            api_key=os.environ.get('DEEPSEEK_API_KEY',""),
             base_url="https://api.deepseek.com",
             model="deepseek-chat",
             temperature=0.7,
@@ -52,7 +53,7 @@ def _langsearch_rerank(query: str, documents: list[str], k: int = 10) -> list[fl
         "documents": documents,
     })
     headers = {
-        "Authorization": f"Bearer {st.secrets['LANGSEARCH_API_KEY']}",
+        "Authorization": f"Bearer {os.environ.get('LANGSEARCH_API_KEY',"")}",
         "Content-Type": "application/json",
     }
     response = requests.post(url, headers=headers, data=payload)
