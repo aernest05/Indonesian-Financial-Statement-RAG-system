@@ -13,7 +13,6 @@ Implements FinSage §3.2 and §3.3 without re-embedding stored documents:
 import json as _json
 import requests
 from datetime import datetime
-import streamlit as st
 from backend.ingestion import setup_retriever
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
