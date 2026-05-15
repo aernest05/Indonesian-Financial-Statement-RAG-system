@@ -1,7 +1,6 @@
 venv
 data
 chroma_langchain_db
-financial_statements_db
 .vscode
 __pycache__
 .streamlit/secrets.toml

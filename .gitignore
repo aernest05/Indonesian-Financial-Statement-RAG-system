@@ -8,3 +8,4 @@ claude_workings
 *.ipynb
 CLAUDE.md
 .claude
+.env

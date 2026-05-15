@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend code
 COPY backend/ ./backend/
+COPY financial_statements_db/ /app/financial_statements_db/
 
 # Expose port
 EXPOSE 8080
