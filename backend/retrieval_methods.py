@@ -31,7 +31,7 @@ def _load_bm25(db) -> tuple[BM25Okapi, list]:
 
 # ── Individual retrieval paths ────────────────────────────────────────────────
 
-def _bm25_retrieve(query: str, db, k: int = 10) -> list[Document]:
+async def _bm25_retrieve(query: str, db, k: int = 10) -> list[Document]:
     index, all_docs = _load_bm25(db)
     scores = index.get_scores(query.lower().split())
     top_idx = np.argsort(scores)[::-1][:k]
@@ -44,7 +44,7 @@ def _bm25_retrieve(query: str, db, k: int = 10) -> list[Document]:
     ]
 
 
-def _dense_retrieve(
+async def _dense_retrieve(
     query: str, db, k: int = 10, year_filter: dict | None = None
 ) -> list[Document]:
     if year_filter:
@@ -52,14 +52,14 @@ def _dense_retrieve(
     return db.similarity_search(query, k=k)
 
 
-def _hyde_retrieve(query: str, db, k: int = 10) -> list[Document]:
+async def _hyde_retrieve(query: str, db, k: int = 10) -> list[Document]:
     """Embed a hypothetical answer and search the existing Chroma index."""
     hypothesis = generate_hyde_hypothesis(query)
     hyp_vec = db._embedding_function.embed_query(hypothesis)
     return db.similarity_search_by_vector(hyp_vec, k=k)
 
 
-def _metadata_retrieve(query: str, db, k: int = 10) -> list[Document]:
+async def _metadata_retrieve(query: str, db, k: int = 10) -> list[Document]:
     """
     TF-IDF similarity between the query and each chunk's section_summary metadata.
     Returns the top-k chunks whose summaries best match the query.

@@ -17,6 +17,7 @@ from backend.ingestion import setup_retriever
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+import asyncio
 import os
 
 from backend.retrieval_methods import _hyde_retrieve, _bm25_retrieve, _metadata_retrieve, _dense_retrieve
@@ -144,7 +145,7 @@ def _rerank(
 
 # ── Full MPR pipeline ─────────────────────────────────────────────────────────
 
-def mpr_retrieve(
+async def mpr_retrieve(
     sub_queries: list[str],
     db,
     year_filter: dict | None = None,
@@ -164,29 +165,38 @@ def mpr_retrieve(
 
     final = []
 
-    for i,sq in enumerate(sub_queries):
+     # content → doc (deduplication key)
 
+    async def retrieve_sub_query(sq,i):
         seen: dict[str, Document] = {}
 
         def _add(retrieved: list[Document]) -> None:
             for d in retrieved:
                 if d.page_content not in seen:
-                    seen[d.page_content] = d # content → doc (deduplication key)
+                    seen[d.page_content] = d
+        
 
-        print(f"[MPR] sub-query: {sq!r}") 
-        _add(_dense_retrieve(sq, db, k=k_per_retrieval_method, year_filter=year_filter))
+        print(f"[MPR] sub-query: {sq!r}")
+
+        tasks = []
+
+        tasks.append(_dense_retrieve(sq, db, k=k_per_retrieval_method, year_filter=year_filter))
 
         if enable_bm25_retrieve:
-            _add(_bm25_retrieve(sq, db, k=k_per_retrieval_method))
+            tasks.append(_bm25_retrieve(sq, db, k=k_per_retrieval_method))
 
         if enable_hyde:
-            try:
-                _add(_hyde_retrieve(sq, db, k=k_per_retrieval_method))
-            except Exception as e:
-                print(f"  [HyDE] skipped: {e}")
+            tasks.append(_hyde_retrieve(sq, db, k=k_per_retrieval_method))
 
         if enable_metadata:
-            _add(_metadata_retrieve(sq, db, k=k_per_retrieval_method))
+            tasks.append(_metadata_retrieve(sq, db, k=k_per_retrieval_method))
+
+        for coro in asyncio.as_completed(tasks):
+            try:
+                result = await coro
+                _add(result)
+            except Exception as e:
+                print(f"  [retrieval] skipped: {e}")
 
         candidates = list(seen.values())
         print(f"[MPR] candidates for SQ{i+1} after multi-path: {len(candidates)}")
@@ -197,13 +207,21 @@ def mpr_retrieve(
 
         candidates = _rerank(sq, candidates, k=k_per_queries, year_hint=year_hint)
         print(f"[MPR] candidates for SQ{i+1} after reranking: {len(candidates)}")
-        final += candidates
+        return candidates
 
-    # Re-rank anchored on the first (primary) sub-query
-    print(f"[MPR] final docs: {len(final)}")
+    asyncio_retrieval_results = await asyncio.gather(
+        *[retrieve_sub_query(sq, i) for i, sq in enumerate(sub_queries)],
+        return_exceptions=True
+    )
+
+
+    for i, result in enumerate(asyncio_retrieval_results):
+        if isinstance(result, Exception):
+            print(f"  [MPR] sub-query {i+1} failed: {result}")
+        else:
+            final += result  # flatten each list into final
+
     return final
-
-
 # ── Answer generation ─────────────────────────────────────────────────────────
 
 _ANSWER_PROMPT = ChatPromptTemplate.from_template("""Answer the user's question based on the following context:
@@ -233,7 +251,7 @@ def prepare_retrieval(question: str) -> dict:
 
     print(f"[MPR] sub-queries: {sub_queries}")
 
-    docs = mpr_retrieve(
+    docs = asyncio.run(mpr_retrieve(
         sub_queries,
         db,
         year_filter=year_filter,
@@ -242,7 +260,7 @@ def prepare_retrieval(question: str) -> dict:
         enable_metadata=False,
         enable_hyde=True,
         enable_expansion=False
-    )
+    ))
     t_retrieval = time.perf_counter()
 
     return {
