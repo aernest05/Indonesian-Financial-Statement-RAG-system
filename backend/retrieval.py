@@ -184,7 +184,7 @@ async def mpr_retrieve(
 
         if enable_bm25_retrieve:
             tasks.append(_bm25_retrieve(sq, db, k=k_per_retrieval_method))
-
+            
         if enable_hyde:
             tasks.append(_hyde_retrieve(sq, db, k=k_per_retrieval_method))
 
@@ -311,3 +311,4 @@ def answer_question(question: str) -> dict:
 if __name__ == "__main__":
     result = answer_question("BBCA performance in 2024")
     print(result["answer"])
+    print(result['timings'])
