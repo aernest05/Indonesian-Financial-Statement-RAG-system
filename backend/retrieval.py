@@ -227,7 +227,7 @@ async def mpr_retrieve(
 _ANSWER_PROMPT = ChatPromptTemplate.from_template("""Answer the user's question based on the following context:
 {context}
 
-Question: {input}
+{chat_history}Question: {input}
 
 Respond in Indonesian.
 """)
@@ -283,11 +283,23 @@ def prepare_retrieval(question: str) -> dict:
     }
 
 
-def stream_answer(question: str, retrieval: dict):
+def stream_answer(question: str, retrieval: dict, chat_history: list[dict] | None = None):
     """Yield LLM answer chunks. Call after prepare_retrieval."""
     import time
 
-    prompt = _ANSWER_PROMPT.format(context=retrieval["context"], input=question)
+    history_str = ""
+    if chat_history:
+        lines = []
+        for msg in chat_history:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            lines.append(f"{role}: {msg['content']}")
+        history_str = "Previous conversation:\n" + "\n".join(lines) + "\n\n"
+
+    prompt = _ANSWER_PROMPT.format(
+        context=retrieval["context"],
+        input=question,
+        chat_history=history_str,
+    )
     for chunk in _get_llm().stream(prompt):
         yield chunk.content
 

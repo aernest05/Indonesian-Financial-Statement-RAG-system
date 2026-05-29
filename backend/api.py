@@ -2,6 +2,7 @@ import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from backend.retrieval import answer_question, prepare_retrieval, stream_answer
 
@@ -15,9 +16,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/pdfs", StaticFiles(directory="data"), name="pdfs")
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 
 class QuestionRequest(BaseModel):
     question: str
+    chat_history: list[ChatMessage] = []
 
 
 class ContextDoc(BaseModel):
@@ -81,7 +90,8 @@ def stream(request: QuestionRequest):
             yield f"data: {json.dumps(context_event, ensure_ascii=False)}\n\n"
 
             # Step 2 — stream LLM tokens
-            for chunk in stream_answer(request.question, retrieval):
+            history = [m.model_dump() for m in request.chat_history]
+            for chunk in stream_answer(request.question, retrieval, history):
                 if chunk:
                     yield f"data: {json.dumps({'type': 'chunk', 'content': chunk}, ensure_ascii=False)}\n\n"
 
