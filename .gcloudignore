@@ -7,11 +7,4 @@ claude_workings
 *.ipynb
 CLAUDE.md
 .claude
-.git
-.gitignore
-__pycache__
-*.pyc
-*.pyo
-frontend/
-evaluation/
-*.md
+.env
