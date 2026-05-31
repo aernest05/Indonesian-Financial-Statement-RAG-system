@@ -233,7 +233,7 @@ Respond in Indonesian.
 """)
 
 
-def prepare_retrieval(question: str) -> dict:
+def prepare_retrieval(question: str, chat_history: list[dict] | None = None) -> dict:
     """Run DB setup, query processing, and retrieval. Returns everything needed to generate an answer."""
     import time
 
@@ -241,7 +241,7 @@ def prepare_retrieval(question: str) -> dict:
     db = setup_retriever()
     t_db = time.perf_counter()
 
-    processed = process_query(question)
+    processed = process_query(question, chat_history)
     years: list[int] = processed.extracted_years
     operator: str = processed.operator
     sub_queries: list[str] = processed.sub_queries

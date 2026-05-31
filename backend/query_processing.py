@@ -41,7 +41,7 @@ PROCESS_QUERY_PROMPT = ChatPromptTemplate.from_template("""You are a query pre-p
 2. Decompose the question into 1-3 focused sub-questions suitable for document retrieval.
 
 Current year: 2026
-
+{chat_history}
 User query: {query}
 
 Output ONLY valid JSON in this exact format:
@@ -78,8 +78,8 @@ Examples:
 """)
 
 
-def process_query(query: str) -> QueryResult:
-    """Single LLM call: year extraction + operator + query decomposition. 
+def process_query(query: str, chat_history: list[dict] | None = None) -> QueryResult:
+    """Single LLM call: year extraction + operator + query decomposition.
 
     Replaces the former preprocess_query + decompose_query pair.
 
@@ -91,7 +91,14 @@ def process_query(query: str) -> QueryResult:
         }
     """
     try:
-        response = llm.invoke(PROCESS_QUERY_PROMPT.format(query=query))
+        history_str = ""
+        if chat_history:
+            lines = [
+                f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+                for m in chat_history
+            ]
+            history_str = "Previous conversation:\n" + "\n".join(lines) + "\n\n"
+        response = llm.invoke(PROCESS_QUERY_PROMPT.format(query=query, chat_history=history_str))
         content = str(response.content)
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
@@ -110,7 +117,8 @@ def process_query(query: str) -> QueryResult:
 
 
 HYDE_PROMPT = ChatPromptTemplate.from_template("""Write a short paragraph (3-5 sentences) that reads like an extract from a company financial report and directly answers the following question. Use formal financial language.
-
+History: {chat_history}
+                                               
 Question: {query}
 
 Answer:

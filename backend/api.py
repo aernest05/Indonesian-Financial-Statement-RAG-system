@@ -3,13 +3,14 @@ import os
 import uuid
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from backend.retrieval import answer_question, prepare_retrieval, stream_answer
+from backend.logger import log_query
 
 EXEMPT_IPS = {""}
 
@@ -22,7 +23,17 @@ limiter = Limiter(key_func=rate_limit_key)
 
 app = FastAPI(title="RAG Q&A API")
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    body = await request.body()
+    try:
+        question = json.loads(body).get("question", "")
+    except Exception:
+        question = ""
+    log_query(question=question, user_ref=get_remote_address(request), hit_rate_limit=True)
+    return JSONResponse(status_code=429, content={"detail": str(exc)})
 
 app.add_middleware(
     CORSMiddleware,
@@ -90,10 +101,13 @@ def stream(request: Request, body: QuestionRequest):
     if not body.question.strip():
         raise HTTPException(status_code=400, detail="Question must not be empty")
 
+    user_ref = get_remote_address(request)
+
     def generate():
         try:
             # Step 1 — retrieval (blocking, run in FastAPI's thread pool)
-            retrieval = prepare_retrieval(body.question)
+            history = [m.model_dump() for m in body.chat_history]
+            retrieval = prepare_retrieval(body.question, history)
 
             # Send context metadata as the first event so the UI can show
             # source documents immediately, before the LLM starts talking.
@@ -108,12 +122,20 @@ def stream(request: Request, body: QuestionRequest):
             yield f"data: {json.dumps(context_event, ensure_ascii=False)}\n\n"
 
             # Step 2 — stream LLM tokens
-            history = [m.model_dump() for m in body.chat_history]
+            answer_chunks: list[str] = []
             for chunk in stream_answer(body.question, retrieval, history):
                 if chunk:
+                    answer_chunks.append(chunk)
                     yield f"data: {json.dumps({'type': 'chunk', 'content': chunk}, ensure_ascii=False)}\n\n"
 
-            # Step 3 — signal completion
+            # Step 3 — log and signal completion
+            tickers = {d.metadata.get("ticker", "") for d in retrieval["docs"] if d.metadata.get("ticker")}
+            log_query(
+                question=body.question,
+                response_preview="".join(answer_chunks),
+                ticker=", ".join(sorted(tickers)),
+                user_ref=user_ref,
+            )
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
