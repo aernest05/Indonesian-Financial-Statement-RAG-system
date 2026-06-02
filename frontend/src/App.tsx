@@ -144,8 +144,6 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [showContext, setShowContext] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [limiterResult, setLimiterResult] = useState<{ ok: boolean; text: string } | null>(null)
-  const [limiterLoading, setLimiterLoading] = useState(false)
   const [stocks, setStocks] = useState<Stock[]>([])
 
   useEffect(() => {
@@ -154,25 +152,6 @@ export default function App() {
       .then(setStocks)
       .catch(() => {})
   }, [])
-
-  const testLimiter = async () => {
-    setLimiterLoading(true)
-    setLimiterResult(null)
-    try {
-      const res = await fetch(`${API_BASE}/testlimiter`, { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setLimiterResult({ ok: true, text: data.message })
-      } else {
-        const data = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }))
-        setLimiterResult({ ok: false, text: data.detail ?? `HTTP ${res.status}` })
-      }
-    } catch (err) {
-      setLimiterResult({ ok: false, text: (err as Error).message })
-    } finally {
-      setLimiterLoading(false)
-    }
-  }
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -328,7 +307,7 @@ export default function App() {
               {stocks.map(s => (
                 <button
                   key={s.ticker}
-                  className="stock-item"
+                  className="stock-item "
                   onClick={() => {
                     setInput(`Analisis laporan keuangan ${s.ticker}`)
                     setSidebarOpen(false)
@@ -354,29 +333,6 @@ export default function App() {
               onClick={() => setShowContext(v => !v)}
             />
           </label>
-        </div>
-
-        <div className="sidebar-section">
-          <p className="sidebar-section-label">Developer</p>
-          <button
-            className="new-chat-btn"
-            onClick={testLimiter}
-            disabled={limiterLoading}
-          >
-            {limiterLoading ? 'Testing…' : 'Test Rate Limiter'}
-          </button>
-          {limiterResult && (
-            <p className="info-line" style={{ color: limiterResult.ok ? 'var(--accent)' : '#e57373', marginTop: '0.5rem', fontSize: '0.78rem' }}>
-              {limiterResult.ok ? '✓' : '✗'} {limiterResult.text}
-            </p>
-          )}
-        </div>
-
-        <div className="sidebar-section sidebar-info">
-          <p className="sidebar-section-label">About</p>
-          <p className="info-line">🤖 DeepSeek Chat</p>
-          <p className="info-line">🔍 Dense + HyDE Retrieval</p>
-          <p className="info-line">📊 Indonesian Public Companies</p>
         </div>
 
         <div className="sidebar-bottom">

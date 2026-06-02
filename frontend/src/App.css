@@ -222,7 +222,7 @@
 .stock-ticker {
   font-size: 0.8rem;
   font-weight: 700;
-  color: var(--accent);
+  color: #8888aa;
   flex-shrink: 0;
   font-family: monospace;
 }
@@ -422,7 +422,7 @@
 .welcome-stock-chip-ticker {
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--accent);
+  color: #8888aa;
   font-family: monospace;
 }
 
