@@ -1,16 +1,8 @@
-import os
 import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-
-llm = ChatOpenAI(
-    api_key=os.environ.get("DEEPSEEK_API_KEY"),
-    base_url="https://api.deepseek.com",
-    model="deepseek-chat",
-    temperature=0.3,
-)
+from backend.llm import _get_llm
 
 DEDUP_THRESHOLD = 0.7
 COREF_K = 4
@@ -103,7 +95,7 @@ def resolve_coreferences(chunks):
 
         context = "\n---\n".join(preceding_texts)
         try:
-            response = llm.invoke(
+            response = _get_llm(temperature=0.3).invoke(
                 COREF_PROMPT.format(context=context, text=chunk.page_content)
             )
             chunk.page_content = response.content.strip()
@@ -130,7 +122,7 @@ def generate_metadata_summaries(chunks):
     for page, indices in page_groups.items():
         combined = "\n".join(chunks[i].page_content for i in indices)[:3000]
         try:
-            response = llm.invoke(SUMMARY_PROMPT.format(text=combined))
+            response = _get_llm(temperature=0.3).invoke(SUMMARY_PROMPT.format(text=combined))
             summary = response.content.strip()
         except Exception as e:
             print(f"  [summary] Warning: page {page} skipped ({e})")

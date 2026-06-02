@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from backend.retrieval import answer_question, prepare_retrieval, stream_answer
+from backend.pipeline import answer_question, prepare_retrieval
+from backend.llm import stream_answer
 from backend.logger import log_query
 
 EXEMPT_IPS = {""}
@@ -150,6 +151,38 @@ def stream(request: Request, body: QuestionRequest):
             "Connection": "keep-alive",
         },
     )
+
+@app.get("/stocks")
+def list_stocks():
+    """Return the list of stocks available in the RAG database."""
+    import pathlib
+    report_dates_path = pathlib.Path("report_dates.json")
+    all_companies_path = pathlib.Path("data/allCompanies.json")
+
+    with open(report_dates_path) as f:
+        report_dates: dict = json.load(f)
+
+    tickers = sorted({key.split("_")[0].strip().rstrip(" (1)") for key in report_dates})
+    # Normalise any "(1)" suffixes that appear in filenames
+    tickers = sorted({t.split(" ")[0] for t in tickers})
+
+    with open(all_companies_path) as f:
+        companies: list[dict] = json.load(f)["data"]
+
+    company_map = {c["KodeEmiten"]: c for c in companies}
+
+    result = []
+    for ticker in tickers:
+        info = company_map.get(ticker, {})
+        result.append({
+            "ticker": ticker,
+            "name": info.get("NamaEmiten", ticker),
+            "sector": info.get("Sektor", ""),
+            "subsector": info.get("SubSektor", ""),
+        })
+
+    return result
+
 
 @app.post("/testlimiter")
 @limiter.limit("5/hour")

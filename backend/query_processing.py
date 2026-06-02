@@ -1,15 +1,7 @@
 import re
 import json
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-import os
-
-llm = ChatOpenAI(
-    api_key=os.environ.get('DEEPSEEK_API_KEY',""),
-    base_url="https://api.deepseek.com",
-    model="deepseek-chat",
-    temperature=0.7,
-)
+from backend.llm import _get_llm
 
 class QueryResult:
     def __init__(self, extracted_years: list[int], operator: str, sub_queries: list[str]):
@@ -98,7 +90,7 @@ def process_query(query: str, chat_history: list[dict] | None = None) -> QueryRe
                 for m in chat_history
             ]
             history_str = "Previous conversation:\n" + "\n".join(lines) + "\n\n"
-        response = llm.invoke(PROCESS_QUERY_PROMPT.format(query=query, chat_history=history_str))
+        response = _get_llm().invoke(PROCESS_QUERY_PROMPT.format(query=query, chat_history=history_str))
         content = str(response.content)
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
@@ -128,8 +120,8 @@ Respond in Indonesian.""")
 def generate_hyde_hypothesis(query: str) -> str:
     """Generate a hypothetical document that would answer the query (HyDE, FinSage §3.2)."""
     try:
-        response = llm.invoke(HYDE_PROMPT.format(query=query))
-        return response.content.strip()
+        response = _get_llm().invoke(HYDE_PROMPT.format(query=query, chat_history=""))
+        return str(response.content).strip()
     except Exception as e:
         print(f"[HyDE] Warning: {e}")
         return query

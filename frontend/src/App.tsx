@@ -25,6 +25,14 @@ interface Message {
   error?: boolean
 }
 
+// ── Types ──────────────────────────────────────────────────────────────────
+interface Stock {
+  ticker: string
+  name: string
+  sector: string
+  subsector: string
+}
+
 // ── Prompt suggestions ─────────────────────────────────────────────────────
 const SUGGESTIONS = [
   { icon: '🏦', label: 'Total Aset BBRI 2025', text: 'Berapa total aset BBRI per 31 Desember 2025?' },
@@ -136,6 +144,35 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [showContext, setShowContext] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [limiterResult, setLimiterResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const [limiterLoading, setLimiterLoading] = useState(false)
+  const [stocks, setStocks] = useState<Stock[]>([])
+
+  useEffect(() => {
+    fetch(`${API_BASE}/stocks`)
+      .then(r => r.json())
+      .then(setStocks)
+      .catch(() => {})
+  }, [])
+
+  const testLimiter = async () => {
+    setLimiterLoading(true)
+    setLimiterResult(null)
+    try {
+      const res = await fetch(`${API_BASE}/testlimiter`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setLimiterResult({ ok: true, text: data.message })
+      } else {
+        const data = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }))
+        setLimiterResult({ ok: false, text: data.detail ?? `HTTP ${res.status}` })
+      }
+    } catch (err) {
+      setLimiterResult({ ok: false, text: (err as Error).message })
+    } finally {
+      setLimiterLoading(false)
+    }
+  }
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -284,6 +321,28 @@ export default function App() {
           </button>
         </div>
 
+        {stocks.length > 0 && (
+          <div className="sidebar-section">
+            <p className="sidebar-section-label">Available Stocks</p>
+            <div className="stock-list">
+              {stocks.map(s => (
+                <button
+                  key={s.ticker}
+                  className="stock-item"
+                  onClick={() => {
+                    setInput(`Analisis laporan keuangan ${s.ticker}`)
+                    setSidebarOpen(false)
+                    setTimeout(() => textareaRef.current?.focus(), 0)
+                  }}
+                >
+                  <span className="stock-ticker">{s.ticker}</span>
+                  <span className="stock-name">{s.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="sidebar-section">
           <p className="sidebar-section-label">Settings</p>
           <label className="toggle-row">
@@ -295,6 +354,22 @@ export default function App() {
               onClick={() => setShowContext(v => !v)}
             />
           </label>
+        </div>
+
+        <div className="sidebar-section">
+          <p className="sidebar-section-label">Developer</p>
+          <button
+            className="new-chat-btn"
+            onClick={testLimiter}
+            disabled={limiterLoading}
+          >
+            {limiterLoading ? 'Testing…' : 'Test Rate Limiter'}
+          </button>
+          {limiterResult && (
+            <p className="info-line" style={{ color: limiterResult.ok ? 'var(--accent)' : '#e57373', marginTop: '0.5rem', fontSize: '0.78rem' }}>
+              {limiterResult.ok ? '✓' : '✗'} {limiterResult.text}
+            </p>
+          )}
         </div>
 
         <div className="sidebar-section sidebar-info">
@@ -367,6 +442,27 @@ export default function App() {
                   </button>
                 ))}
               </div>
+
+              {stocks.length > 0 && (
+                <div className="welcome-stocks">
+                  <p className="welcome-stocks-label">Available stocks</p>
+                  <div className="welcome-stock-list">
+                    {stocks.map(s => (
+                      <button
+                        key={s.ticker}
+                        className="welcome-stock-chip"
+                        onClick={() => {
+                          setInput(`Analisis laporan keuangan ${s.ticker}`)
+                          setTimeout(() => textareaRef.current?.focus(), 0)
+                        }}
+                      >
+                        <span className="welcome-stock-chip-ticker">{s.ticker}</span>
+                        <span className="welcome-stock-chip-name">{s.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             /* ── Messages ── */

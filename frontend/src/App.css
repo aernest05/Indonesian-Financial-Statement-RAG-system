@@ -194,6 +194,47 @@
   margin: 0;
 }
 
+.stock-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stock-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  background: none;
+  border: 1px solid #1f1f28;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+  width: 100%;
+}
+
+.stock-item:hover {
+  background: #1f1f28;
+  border-color: var(--accent);
+}
+
+.stock-ticker {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+  font-family: monospace;
+}
+
+.stock-name {
+  font-size: 0.73rem;
+  color: #8888aa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sidebar-bottom {
   margin-top: auto;
   padding: 1rem;
@@ -338,6 +379,56 @@
   .suggestions {
     grid-template-columns: 1fr;
   }
+}
+
+.welcome-stocks {
+  margin-top: 1.5rem;
+  width: 100%;
+  max-width: 540px;
+}
+
+.welcome-stocks-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #3f4257;
+  margin: 0 0 0.6rem;
+}
+
+.welcome-stock-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.welcome-stock-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.75rem;
+  background: #111116;
+  border: 1px solid #1f1f28;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.welcome-stock-chip:hover {
+  background: #1f1f28;
+  border-color: var(--accent);
+}
+
+.welcome-stock-chip-ticker {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: monospace;
+}
+
+.welcome-stock-chip-name {
+  font-size: 0.72rem;
+  color: #8888aa;
 }
 
 .suggestion-card {
