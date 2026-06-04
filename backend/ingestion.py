@@ -4,6 +4,8 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 import os
 import re
+import json
+from datetime import datetime
 
 
 def setup_retriever(chroma_db_dir: str = "financial_statements_db"):
@@ -97,6 +99,33 @@ Section: {section_type}
     return docs
 
 
+def _extract_date(text: str) -> str | None:
+    match = re.search(r'\d{1,2}\s+\w+\s+\d{4}', text)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(), "%d %B %Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def update_report_dates(db, output_path: str = "data/report_dates.json") -> None:
+    all_docs = db.get(include=["metadatas", "documents"])
+    report_dates = {}
+    for text, meta in zip(all_docs["documents"], all_docs["metadatas"]):
+        if not text or meta.get("section_type") != "General Information":
+            continue
+        date = _extract_date(text)
+        if not date:
+            continue
+        unique_id = f"{meta['ticker']}_{meta['year']}_{meta['period']}"
+        report_dates[unique_id] = date
+
+    with open(output_path, "w") as f:
+        json.dump(report_dates, f, indent=2)
+    print(f"[ingestion] report_dates saved → {output_path} ({len(report_dates)} entries)")
+
+
 def embed_documents(file_path,chroma_db_dir: str = "chroma_langchain_db" ,apply_ffp: bool = False):
     """Embed new documents and store in vector database.
 
@@ -120,7 +149,7 @@ if __name__ == "__main__":
 
     existing_sources = {metadata['source'] for metadata in data['metadatas']} if data else []
 
-    folder = "./data/banks"
+    folder = "./data/pdf"
     for file in os.listdir(folder):
         file_path = folder+"/"+file
         if file_path in existing_sources:
@@ -129,3 +158,6 @@ if __name__ == "__main__":
             print(f"embedding {file}...")
             embed_documents(file_path, db_name, False)
             print("Done")
+
+    update_report_dates(db)
+    

@@ -156,7 +156,7 @@ def stream(request: Request, body: QuestionRequest):
 def list_stocks():
     """Return the list of stocks available in the RAG database."""
     import pathlib
-    report_dates_path = pathlib.Path("report_dates.json")
+    report_dates_path = pathlib.Path("data/report_dates.json")
     all_companies_path = pathlib.Path("data/allCompanies.json")
 
     with open(report_dates_path) as f:
