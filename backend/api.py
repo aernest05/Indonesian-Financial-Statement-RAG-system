@@ -12,6 +12,7 @@ from slowapi.util import get_remote_address
 from backend.pipeline import answer_question, prepare_retrieval
 from backend.llm import stream_answer
 from backend.logger import log_query
+from backend.auth import require_auth, check_and_increment_quota, get_subscription_status
 
 EXEMPT_IPS = {""}
 
@@ -87,9 +88,16 @@ def ask(request: Request, body: QuestionRequest):
     )
 
 
+# ── Auth / subscription status ─────────────────────────────────────────────────
+@app.get("/me")
+def me(request: Request):
+    user_id = require_auth(request)
+    return get_subscription_status(user_id)
+
+
 # ── Streaming endpoint (Server-Sent Events) ────────────────────────────────────
 @app.post("/stream")
-@limiter.limit("5/hour")
+@limiter.limit("20/hour")
 def stream(request: Request, body: QuestionRequest):
     """
     SSE stream.  Event sequence:
@@ -102,6 +110,8 @@ def stream(request: Request, body: QuestionRequest):
     if not body.question.strip():
         raise HTTPException(status_code=400, detail="Question must not be empty")
 
+    user_id = require_auth(request)
+    check_and_increment_quota(user_id)
     user_ref = get_remote_address(request)
 
     def generate():
