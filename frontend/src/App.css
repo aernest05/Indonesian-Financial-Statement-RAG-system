@@ -21,7 +21,7 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  overflow-y: auto;
+  overflow: hidden;
   z-index: 200;
 
   /* hidden off-screen on mobile, visible on desktop */
@@ -140,6 +140,56 @@
   letter-spacing: 0.08em;
   color: #3f4257;
   margin: 0 0 0.25rem;
+}
+
+/* ── Conversation history ── */
+.sidebar-section--history {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}
+
+.conv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 0.75rem;
+}
+
+.conv-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.conv-item:hover {
+  background: #1f1f28;
+}
+
+.conv-item--active {
+  background: #1a1a2e;
+  border-left: 2px solid var(--accent);
+}
+
+.conv-title {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.conv-item--active .conv-title {
+  color: #e2e8f0;
 }
 
 .toggle-row {

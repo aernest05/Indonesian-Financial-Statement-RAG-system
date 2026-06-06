@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
@@ -23,8 +23,14 @@ interface Message {
   content: string
   context?: ContextDoc[]
   extractedYears?: number[]
-  streaming?: boolean   // true while tokens are still arriving
+  streaming?: boolean
   error?: boolean
+}
+
+interface Conversation {
+  id: string
+  title: string
+  updated_at: string
 }
 
 interface SubscriptionStatus {
@@ -34,7 +40,6 @@ interface SubscriptionStatus {
   expires_at: string | null
 }
 
-// ── Types ──────────────────────────────────────────────────────────────────
 interface Stock {
   ticker: string
   name: string
@@ -111,7 +116,6 @@ function MessageBubble({
     )
   }
 
-  // While the assistant placeholder is empty and still streaming, show dots
   const showDots = msg.streaming && msg.content === ''
 
   return (
@@ -145,6 +149,31 @@ function MessageBubble({
   )
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+function makeTitle(firstUserMessage: string): string {
+  return firstUserMessage.length > 45
+    ? firstUserMessage.slice(0, 45).trimEnd() + '…'
+    : firstUserMessage
+}
+
+function groupByDate(conversations: Conversation[]): { label: string; items: Conversation[] }[] {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today.getTime() - 86400000)
+  const week = new Date(today.getTime() - 6 * 86400000)
+
+  const groups: Record<string, Conversation[]> = { Today: [], Yesterday: [], 'Last 7 days': [], Older: [] }
+  for (const c of conversations) {
+    const d = new Date(c.updated_at)
+    if (d >= today) groups['Today'].push(c)
+    else if (d >= yesterday) groups['Yesterday'].push(c)
+    else if (d >= week) groups['Last 7 days'].push(c)
+    else groups['Older'].push(c)
+  }
+  return Object.entries(groups)
+    .filter(([, items]) => items.length > 0)
+    .map(([label, items]) => ({ label, items }))
+}
 
 // ── Main App ───────────────────────────────────────────────────────────────
 export default function App() {
@@ -157,6 +186,13 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [subStatus, setSubStatus] = useState<SubscriptionStatus | null>(null)
+
+  // Chat history state
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [activeConvId, setActiveConvId] = useState<string | null>(null)
+  const activeConvIdRef = useRef<string | null>(null)
+
+  useEffect(() => { activeConvIdRef.current = activeConvId }, [activeConvId])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -187,15 +223,69 @@ export default function App() {
       .catch(() => {})
   }, [])
 
+  // Load conversation list when user logs in
+  const loadConversations = useCallback(async () => {
+    if (!user) { setConversations([]); return }
+    const { data } = await supabase
+      .from('chat_conversations')
+      .select('id, title, updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(50)
+    setConversations(data ?? [])
+  }, [user])
+
+  useEffect(() => { loadConversations() }, [loadConversations])
+
+  // Load messages for a conversation
+  const loadConversation = async (conv: Conversation) => {
+    const { data } = await supabase
+      .from('chat_messages')
+      .select('role, content, context_docs, extracted_years')
+      .eq('conversation_id', conv.id)
+      .order('created_at', { ascending: true })
+
+    const loaded: Message[] = (data ?? []).map(row => ({
+      role: row.role as 'user' | 'assistant',
+      content: row.content,
+      context: row.context_docs ?? undefined,
+      extractedYears: row.extracted_years ?? undefined,
+    }))
+
+    setMessages(loaded)
+    setActiveConvId(conv.id)
+    setSidebarOpen(false)
+  }
+
+  // Persist a finished message pair to Supabase
+  const persistMessages = useCallback(async (
+    convId: string,
+    userMsg: Message,
+    assistantMsg: Message,
+  ) => {
+    await supabase.from('chat_messages').insert([
+      { conversation_id: convId, role: 'user', content: userMsg.content },
+      {
+        conversation_id: convId,
+        role: 'assistant',
+        content: assistantMsg.content,
+        context_docs: assistantMsg.context ?? null,
+        extracted_years: assistantMsg.extractedYears ?? null,
+      },
+    ])
+    // Bump updated_at so it sorts to top
+    await supabase
+      .from('chat_conversations')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', convId)
+  }, [])
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  // Auto-resize textarea
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
@@ -203,23 +293,47 @@ export default function App() {
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'
   }, [input])
 
+  const startNewChat = () => {
+    setMessages([])
+    setActiveConvId(null)
+    setSidebarOpen(false)
+  }
+
   const sendMessage = async (text: string) => {
     const q = text.trim()
     if (!q || loading) return
 
-    // Capture history before adding new messages
     const history = messages
       .filter(m => !m.streaming)
       .map(m => ({ role: m.role, content: m.content }))
 
     setInput('')
-    // Add user message + an empty streaming assistant placeholder
     setMessages(prev => [
       ...prev,
       { role: 'user', content: q },
       { role: 'assistant', content: '', streaming: true },
     ])
     setLoading(true)
+
+    // Create a new conversation if needed (logged-in users only)
+    let convId = activeConvIdRef.current
+    if (!convId && user) {
+      const { data } = await supabase
+        .from('chat_conversations')
+        .insert({ user_id: user.id, title: makeTitle(q) })
+        .select('id')
+        .single()
+      if (data) {
+        convId = data.id
+        setActiveConvId(data.id)
+        // Optimistically add to sidebar
+        setConversations(prev => [{
+          id: data.id,
+          title: makeTitle(q),
+          updated_at: new Date().toISOString(),
+        }, ...prev])
+      }
+    }
 
     try {
       const res = await fetch(`${API_BASE}/stream`, {
@@ -240,7 +354,6 @@ export default function App() {
       const decoder = new TextDecoder()
       let buffer = ''
 
-      // Helper: mutate the last (assistant) message in state
       const updateLast = (patch: Partial<Message>) =>
         setMessages(prev => {
           const msgs = [...prev]
@@ -253,10 +366,8 @@ export default function App() {
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
-
-        // SSE lines are separated by "\n\n"; each line starts with "data: "
         const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''   // last (possibly incomplete) chunk stays buffered
+        buffer = parts.pop() ?? ''
 
         for (const part of parts) {
           const line = part.trim()
@@ -267,18 +378,12 @@ export default function App() {
           try { event = JSON.parse(raw) } catch { continue }
 
           if (event.type === 'context') {
-            updateLast({
-              context: event.docs,
-              extractedYears: event.extracted_years,
-            })
+            updateLast({ context: event.docs, extractedYears: event.extracted_years })
           } else if (event.type === 'chunk') {
             setMessages(prev => {
               const msgs = [...prev]
               const last = msgs[msgs.length - 1]
-              msgs[msgs.length - 1] = {
-                ...last,
-                content: last.content + (event.content ?? ''),
-              }
+              msgs[msgs.length - 1] = { ...last, content: last.content + (event.content ?? '') }
               return msgs
             })
           } else if (event.type === 'done') {
@@ -289,8 +394,22 @@ export default function App() {
         }
       }
 
-      // Ensure streaming flag is cleared even if "done" event was missed
       updateLast({ streaming: false })
+
+      // Persist to Supabase if logged in
+      if (convId) {
+        setMessages(prev => {
+          const userMsg = prev[prev.length - 2]
+          const assistantMsg = prev[prev.length - 1]
+          if (userMsg && assistantMsg && !assistantMsg.error) {
+            persistMessages(convId!, userMsg, assistantMsg).then(() => {
+              // Refresh conversation list order
+              loadConversations()
+            })
+          }
+          return prev
+        })
+      }
     } catch (err) {
       setMessages(prev => {
         const msgs = [...prev]
@@ -316,6 +435,7 @@ export default function App() {
   }
 
   const isEmpty = messages.length === 0
+  const groups = groupByDate(conversations)
 
   return (
     <div className="shell">
@@ -329,13 +449,32 @@ export default function App() {
             <div className="brand-icon">FS</div>
             <span className="brand-name">FinSage</span>
           </div>
-          <button
-            className="new-chat-btn"
-            onClick={() => { setMessages([]); setSidebarOpen(false) }}
-          >
+          <button className="new-chat-btn" onClick={startNewChat}>
             + New chat
           </button>
         </div>
+
+        {/* ── Chat history (logged-in users) ── */}
+        {user && conversations.length > 0 && (
+          <div className="sidebar-section sidebar-section--history">
+            {groups.map(({ label, items }) => (
+              <div key={label}>
+                <p className="sidebar-section-label">{label}</p>
+                <div className="conv-list">
+                  {items.map(c => (
+                    <button
+                      key={c.id}
+                      className={`conv-item${c.id === activeConvId ? ' conv-item--active' : ''}`}
+                      onClick={() => loadConversation(c)}
+                    >
+                      <span className="conv-title">{c.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {stocks.length > 0 && (
           <div className="sidebar-section">
@@ -344,7 +483,7 @@ export default function App() {
               {stocks.map(s => (
                 <button
                   key={s.ticker}
-                  className="stock-item "
+                  className="stock-item"
                   onClick={() => {
                     setInput(`Analisis laporan keuangan ${s.ticker}`)
                     setSidebarOpen(false)
@@ -419,7 +558,6 @@ export default function App() {
 
       {/* ── Main ── */}
       <div className="main">
-        {/* Top bar */}
         <header className="topbar">
           <button
             className="topbar-menu"
@@ -437,7 +575,7 @@ export default function App() {
           {!isEmpty && (
             <button
               className="topbar-new"
-              onClick={() => setMessages([])}
+              onClick={startNewChat}
               title="New chat"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -447,10 +585,8 @@ export default function App() {
           )}
         </header>
 
-        {/* Message area */}
         <div className="chat-area">
           {isEmpty ? (
-            /* ── Empty / welcome state ── */
             <div className="welcome">
               <div className="welcome-logo">
                 <div className="brand-icon brand-icon--lg">FS</div>
@@ -495,7 +631,6 @@ export default function App() {
               )}
             </div>
           ) : (
-            /* ── Messages ── */
             <div className="messages">
               {messages.map((msg, i) => (
                 <MessageBubble key={i} msg={msg} showContext={showContext} />
@@ -505,7 +640,6 @@ export default function App() {
           )}
         </div>
 
-        {/* ── Fixed bottom input ── */}
         <div className="input-bar">
           <div className="input-wrap">
             <textarea
