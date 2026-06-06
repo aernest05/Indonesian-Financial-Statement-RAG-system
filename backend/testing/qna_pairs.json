@@ -1,0 +1,66 @@
+{
+  "easy_question": [
+    {
+      "question": "Berapa total aset BCA per 30 September 2024?",
+      "ground_truth": "Total aset BCA per 30 September 2024 adalah Rp 1.433.701.780 juta"
+    },
+    {
+      "question": "Berapa laba bersih BCA untuk periode 9 bulan yang berakhir 30 September 2024?",
+      "ground_truth": "Laba bersih BCA untuk periode 9 bulan 2024 adalah Rp 41.087.889 juta"
+    },
+    {
+      "question": "Berapa pendapatan bunga BCA per September 2024?",
+      "ground_truth": "Pendapatan bunga BCA per September 2024 adalah Rp 70.288.000 juta"
+    },
+    {
+      "question": "Berapa total simpanan tabungan BCA per 30 September 2024?",
+      "ground_truth": "Total tabungan BCA adalah Rp 560.775.008 juta"
+    },
+    {
+      "question": "Berapa NPL gross BCA per September 2024?",
+      "ground_truth": "NPL gross BCA per September 2024 adalah 2,11%"
+    }
+  ],
+  "hard_question": [
+    {
+      "question": "Berapa ROE BBCA untuk tahun 2025?",
+      "ground_truth": "21,15%"
+    },
+    {
+      "question": "Berapa total aset BBRI per 31 Desember 2025?",
+      "ground_truth": "Rp2.135.371.105 juta"
+    },
+    {
+      "question": "Apakah BBCA atau BBRI yang memiliki rasio NPL gross lebih tinggi di tahun 2025?",
+      "ground_truth": "BBCA"
+    },
+    {
+      "question": "Berapa persentase kepemilikan BBCA di PT BCA Sekuritas?",
+      "ground_truth": "90,0%"
+    },
+    {
+      "question": "Berapa laba bersih yang dapat diatribusikan ke entitas induk BBRI tahun 2025?",
+      "ground_truth": "Rp60.000.000 juta"
+    },
+    {
+      "question": "Apakah laporan keuangan BBCA dan BBRI tahun 2025 sama-sama diaudit dengan opini Wajar Tanpa Modifikasian?",
+      "ground_truth": "Ya"
+    },
+    {
+      "question": "Berapa pendapatan bunga BBRI tahun 2025?",
+      "ground_truth": "Rp207.783.368 juta"
+    },
+    {
+      "question": "Berapa total ekuitas BBCA per 31 Desember 2025?",
+      "ground_truth": "Rp281.687.555 juta"
+    },
+    {
+      "question": "Apakah BBCA memiliki anak usaha di bidang asuransi jiwa?",
+      "ground_truth": "Ya"
+    },
+    {
+      "question": "Berapa beban bunga BBRI tahun 2025?",
+      "ground_truth": "Rp57.284.939 juta"
+    }
+  ]
+}

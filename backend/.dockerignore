@@ -1,0 +1,17 @@
+venv
+chroma_langchain_db
+.vscode
+__pycache__
+.streamlit/secrets.toml
+claude_workings
+*.ipynb
+CLAUDE.md
+.claude
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+frontend/
+evaluation/
+*.md

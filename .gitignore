@@ -9,3 +9,5 @@ claude_workings
 CLAUDE.md
 .claude
 .env
+frontend/node_modules
+frontend/dist
