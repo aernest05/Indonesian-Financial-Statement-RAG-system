@@ -28,6 +28,51 @@ def get_year_filter(years: list, operator: str) -> dict:
         return {}
 
 
+# Maps common ratio/metric keywords → exact line item terms used in IDX XBRL documents.
+# Expand this list as new query failures are discovered.
+RATIO_TERM_MAP: dict[str, list[str]] = {
+    # Profitability
+    "roe": ["jumlah laba", "jumlah ekuitas", "return on equity"],
+    "roa": ["jumlah laba", "jumlah aset", "return on assets"],
+    "nim": ["pendapatan bunga", "pendapatan bunga bersih", "net interest margin"],
+    "bopo": ["beban operasional", "pendapatan operasional", "rasio bopo"],
+    "eps": ["laba per saham", "laba per saham dasar"],
+
+    # Asset quality
+    "npl": ["pinjaman bermasalah", "cadangan kerugian penurunan nilai pada pinjaman", "non performing loan"],
+    "npl gross": ["pinjaman bermasalah", "pinjaman yang diberikan"],
+    "npl net": ["pinjaman bermasalah", "cadangan kerugian penurunan nilai pada pinjaman"],
+    "la": ["cadangan kerugian penurunan nilai"],
+
+    # Capital & liquidity
+    "car": ["rasio kecukupan modal", "capital adequacy ratio", "aset tertimbang menurut risiko"],
+    "ldr": ["pinjaman yang diberikan", "dana pihak ketiga", "loan to deposit ratio"],
+    "lcr": ["aset likuid berkualitas tinggi", "liquidity coverage ratio"],
+    "casa": ["giro", "tabungan", "current account savings account"],
+
+    # Balance sheet items
+    "total aset": ["jumlah aset"],
+    "total kredit": ["pinjaman yang diberikan"],
+    "total ekuitas": ["jumlah ekuitas"],
+    "dpk": ["simpanan nasabah", "giro", "tabungan", "deposito berjangka"],
+    "kredit": ["pinjaman yang diberikan"],
+    "dana pihak ketiga": ["giro", "tabungan", "deposito berjangka"],
+}
+
+
+def _expand_query_with_terms(query: str) -> str:
+    """Append known XBRL line item terms for any ratio keywords found in the query."""
+    q_lower = query.lower()
+    extra_terms: list[str] = []
+    for keyword, terms in RATIO_TERM_MAP.items():
+        if keyword in q_lower:
+            extra_terms.extend(terms)
+    if not extra_terms:
+        return query
+    unique = list(dict.fromkeys(extra_terms))
+    return query + " [cari istilah: " + ", ".join(unique) + "]"
+
+
 PROCESS_QUERY_PROMPT = ChatPromptTemplate.from_template("""You are a query pre-processor for a financial RAG system. Given a user question, do two things in one step:
 1. Extract any year(s) the user is asking about and determine the year filter operator.
 2. Decompose the question into 1-3 focused sub-questions suitable for document retrieval.
@@ -90,7 +135,8 @@ def process_query(query: str, chat_history: list[dict] | None = None) -> QueryRe
                 for m in chat_history
             ]
             history_str = "Previous conversation:\n" + "\n".join(lines) + "\n\n"
-        response = _get_llm().invoke(PROCESS_QUERY_PROMPT.format(query=query, chat_history=history_str))
+        expanded = _expand_query_with_terms(query)
+        response = _get_llm().invoke(PROCESS_QUERY_PROMPT.format(query=expanded, chat_history=history_str))
         content = str(response.content)
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
