@@ -12,7 +12,8 @@ from slowapi.util import get_remote_address
 from backend.pipeline import answer_question, prepare_retrieval
 from backend.llm import stream_answer
 from backend.logger import log_query
-from backend.auth import require_auth, check_and_increment_quota, get_subscription_status
+from backend.auth import require_auth, check_and_increment_quota, get_subscription_status, _supabase
+from backend.payments import create_checkout_session, handle_webhook
 
 EXEMPT_IPS = {""}
 
@@ -93,6 +94,21 @@ def ask(request: Request, body: QuestionRequest):
 def me(request: Request):
     user_id = require_auth(request)
     return get_subscription_status(user_id)
+
+
+# ── Payments ───────────────────────────────────────────────────────────────────
+@app.post("/create-checkout-session")
+def checkout(request: Request):
+    user_id = require_auth(request)
+    user = _supabase().auth.admin.get_user_by_id(user_id)
+    email = user.user.email if user.user else ""
+    url = create_checkout_session(user_id, email)
+    return {"url": url}
+
+
+@app.post("/webhook")
+async def stripe_webhook(request: Request):
+    return await handle_webhook(request)
 
 
 # ── Streaming endpoint (Server-Sent Events) ────────────────────────────────────
