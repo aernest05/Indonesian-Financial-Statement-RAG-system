@@ -55,6 +55,26 @@ def require_auth(request: Request) -> str:
     return user_id
 
 
+def require_auth_with_email(request: Request) -> tuple[str, str]:
+    """Raise 401 if no valid JWT. Returns (user_id, email).
+
+    Uses the same token verification as require_auth rather than the
+    admin API, since the admin API authenticates as the service key
+    itself (separate failure mode from verifying the user's own token).
+    """
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    token = auth.removeprefix("Bearer ").strip()
+    try:
+        response = _supabase().auth.get_user(token)
+    except Exception:
+        response = None
+    if not response or not response.user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return response.user.id, response.user.email or ""
+
+
 def check_and_increment_quota(user_id: str) -> None:
     """
     Check daily quota for free users. Raises 429 if exceeded.
@@ -72,7 +92,7 @@ def check_and_increment_quota(user_id: str) -> None:
         .execute()
     )
 
-    if _is_active(sub.data):
+    if _is_active(sub.data if sub else None):
         return  # paid user — no quota
 
     # Free user: upsert today's usage row and check count
@@ -85,7 +105,7 @@ def check_and_increment_quota(user_id: str) -> None:
         .execute()
     )
 
-    if usage.data:
+    if usage and usage.data:
         current = usage.data["count"]
         if current >= FREE_QUERIES_PER_DAY:
             raise HTTPException(
@@ -119,13 +139,16 @@ def get_subscription_status(user_id: str) -> dict:
         .execute()
     )
 
-    raw_status = sub.data.get("status", "free") if sub.data else "free"
-    status = "active" if _is_active(sub.data) else ("expired" if raw_status == "active" else raw_status)
-    queries_today = usage.data["count"] if usage.data else 0
+    sub_data = sub.data if sub else None
+    usage_data = usage.data if usage else None
+
+    raw_status = sub_data.get("status", "free") if sub_data else "free"
+    status = "active" if _is_active(sub_data) else ("expired" if raw_status == "active" else raw_status)
+    queries_today = usage_data["count"] if usage_data else 0
 
     return {
         "status": status,
         "queries_today": queries_today,
         "daily_limit": None if status == "active" else FREE_QUERIES_PER_DAY,
-        "expires_at": sub.data.get("expires_at") if sub.data else None,
+        "expires_at": sub_data.get("expires_at") if sub_data else None,
     }

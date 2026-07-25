@@ -12,7 +12,7 @@ from slowapi.util import get_remote_address
 from backend.pipeline import answer_question, prepare_retrieval
 from backend.llm import stream_answer
 from backend.logger import log_query
-from backend.auth import require_auth, check_and_increment_quota, get_subscription_status, _supabase
+from backend.auth import require_auth, require_auth_with_email, check_and_increment_quota, get_subscription_status
 from backend.payments import create_checkout_session, handle_notification
 
 EXEMPT_IPS = {""}
@@ -93,15 +93,16 @@ def ask(request: Request, body: QuestionRequest):
 @app.get("/me")
 def me(request: Request):
     user_id = require_auth(request)
-    return get_subscription_status(user_id)
+    try:
+        return get_subscription_status(user_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Subscription status temporarily unavailable")
 
 
 # ── Payments ───────────────────────────────────────────────────────────────────
 @app.post("/create-checkout-session")
 def checkout(request: Request):
-    user_id = require_auth(request)
-    user = _supabase().auth.admin.get_user_by_id(user_id)
-    email = user.user.email if user.user else ""
+    user_id, email = require_auth_with_email(request)
     url = create_checkout_session(user_id, email)
     return {"url": url}
 
