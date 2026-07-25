@@ -1,0 +1,58 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   FinSage – Legal pages (Terms / Privacy / Refund)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.legal-main {
+  max-width: 720px;
+}
+
+.legal-updated {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.legal-content {
+  color: #cbd5e1;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.legal-content h2 {
+  color: #f8fafc;
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 2rem 0 0.75rem;
+}
+
+.legal-content p {
+  margin: 0 0 1rem;
+}
+
+.legal-content ul {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.legal-content a {
+  color: #3b82f6;
+}
+
+.legal-footer-links {
+  display: flex;
+  justify-content: center;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.legal-footer-links a {
+  color: #64748b;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.legal-footer-links a:hover {
+  color: #94a3b8;
+}

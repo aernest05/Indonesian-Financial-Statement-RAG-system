@@ -1,5 +1,9 @@
 *, *::before, *::after { box-sizing: border-box; }
 
+:root {
+  --accent: #7c5cff;
+}
+
 html, body, #root {
   margin: 0;
   padding: 0;
