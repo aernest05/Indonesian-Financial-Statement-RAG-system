@@ -185,15 +185,20 @@ def list_stocks():
     report_dates_path = pathlib.Path("data/report_dates.json")
     all_companies_path = pathlib.Path("data/allCompanies.json")
 
-    with open(report_dates_path) as f:
-        report_dates: dict = json.load(f)
+    try:
+        with open(report_dates_path) as f:
+            report_dates: dict = json.load(f)
+        with open(all_companies_path) as f:
+            companies: list[dict] = json.load(f)["data"]
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Stock metadata not available: {e.filename} is missing on the server.",
+        )
 
     tickers = sorted({key.split("_")[0].strip().rstrip(" (1)") for key in report_dates})
     # Normalise any "(1)" suffixes that appear in filenames
     tickers = sorted({t.split(" ")[0] for t in tickers})
-
-    with open(all_companies_path) as f:
-        companies: list[dict] = json.load(f)["data"]
 
     company_map = {c["KodeEmiten"]: c for c in companies}
 
