@@ -4,6 +4,8 @@ import { supabase } from './supabase'
 import './Pricing.css'
 import './Legal.css'
 
+const API_BASE = import.meta.env.VITE_API_BASE
+
 const FEATURES_FREE = [
   'Batas tanya harian terbatas',
   'Akses ke seluruh laporan keuangan yang tersedia',
@@ -20,6 +22,7 @@ const FEATURES_PRO = [
 
 export default function Pricing() {
   const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -27,7 +30,7 @@ export default function Pricing() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
-  const handleUpgrade = () => {
+  const handleUpgrade = async () => {
     if (!session) {
       supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -35,7 +38,22 @@ export default function Pricing() {
       })
       return
     }
-    window.location.href = '/app'
+
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/create-checkout-session`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const data = await res.json()
+      if (!res.ok || !data.url) {
+        throw new Error(data.detail || `Error ${res.status}`)
+      }
+      window.location.href = data.url
+    } catch (err) {
+      alert(`Gagal membuka halaman pembayaran: ${(err as Error).message}`)
+      setLoading(false)
+    }
   }
 
   return (
@@ -93,8 +111,8 @@ export default function Pricing() {
                 </li>
               ))}
             </ul>
-            <button className="pricing-cta pricing-cta--primary" onClick={handleUpgrade}>
-              {session ? '✦ Upgrade ke Pro' : 'Masuk untuk upgrade'}
+            <button className="pricing-cta pricing-cta--primary" onClick={handleUpgrade} disabled={loading}>
+              {loading ? 'Memproses…' : session ? '✦ Upgrade ke Pro' : 'Masuk untuk upgrade'}
             </button>
           </div>
         </div>
