@@ -1,110 +1,91 @@
-"""Stripe payment integration: checkout session creation and webhook handling."""
+"""Midtrans Snap payment integration: transaction creation and notification handling."""
 
+import base64
+import hashlib
 import os
-import stripe
+import time
 from datetime import datetime, timezone, timedelta
 from fastapi import HTTPException, Request
+import requests
 from backend.auth import _supabase
 
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
+MIDTRANS_SERVER_KEY = os.environ.get("MIDTRANS_SERVER_KEY", "")
+MIDTRANS_IS_PRODUCTION = os.environ.get("MIDTRANS_IS_PRODUCTION", "false").lower() == "true"
+MIDTRANS_PRICE = int(os.environ.get("MIDTRANS_PRICE", "40000"))
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+SNAP_BASE_URL = (
+    "https://app.midtrans.com/snap/v1"
+    if MIDTRANS_IS_PRODUCTION
+    else "https://app.sandbox.midtrans.com/snap/v1"
+)
+
+SUBSCRIPTION_DAYS = 30
+
+
+def _auth_header() -> dict:
+    token = base64.b64encode(f"{MIDTRANS_SERVER_KEY}:".encode()).decode()
+    return {"Authorization": f"Basic {token}", "Content-Type": "application/json"}
 
 
 def create_checkout_session(user_id: str, user_email: str) -> str:
-    """Create a Stripe Checkout session and return the URL."""
-    sb = _supabase()
+    """Create a Midtrans Snap transaction and return the redirect URL."""
+    order_id = f"{user_id}-{int(time.time())}"
 
-    # Reuse existing Stripe customer if we have one
-    sub = (
-        sb.table("subscriptions")
-        .select("stripe_customer_id")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    customer_id = sub.data.get("stripe_customer_id") if sub.data else None
-
-    params: dict = {
-        "mode": "subscription",
-        "line_items": [{"price": STRIPE_PRICE_ID, "quantity": 1}],
-        "success_url": f"{FRONTEND_URL}?payment=success",
-        "cancel_url": f"{FRONTEND_URL}?payment=cancelled",
-        "metadata": {"user_id": user_id},
-        "subscription_data": {"metadata": {"user_id": user_id}},
+    body = {
+        "transaction_details": {
+            "order_id": order_id,
+            "gross_amount": MIDTRANS_PRICE,
+        },
+        "customer_details": {"email": user_email},
+        "item_details": [{
+            "id": "pro-monthly",
+            "price": MIDTRANS_PRICE,
+            "quantity": 1,
+            "name": "FinSage Pro - 1 bulan",
+        }],
+        "custom_field1": user_id,
+        "callbacks": {"finish": f"{FRONTEND_URL}/app?payment=success"},
     }
 
-    if customer_id:
-        params["customer"] = customer_id
-    else:
-        params["customer_email"] = user_email
+    resp = requests.post(f"{SNAP_BASE_URL}/transactions", json=body, headers=_auth_header())
+    if not resp.ok:
+        raise HTTPException(status_code=502, detail="Failed to create payment session")
 
-    session = stripe.checkout.Session.create(**params)
-    return session.url
+    return resp.json()["redirect_url"]
 
 
-async def handle_webhook(request: Request) -> dict:
-    """Verify and process Stripe webhook events."""
-    payload = await request.body()
-    sig = request.headers.get("stripe-signature", "")
+async def handle_notification(request: Request) -> dict:
+    """Verify and process a Midtrans payment notification."""
+    body = await request.json()
 
-    try:
-        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
-    except stripe.errors.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    order_id = body.get("order_id", "")
+    status_code = body.get("status_code", "")
+    gross_amount = body.get("gross_amount", "")
+    signature_key = body.get("signature_key", "")
 
-    sb = _supabase()
+    expected = hashlib.sha512(
+        f"{order_id}{status_code}{gross_amount}{MIDTRANS_SERVER_KEY}".encode()
+    ).hexdigest()
+    if signature_key != expected:
+        raise HTTPException(status_code=400, detail="Invalid signature")
 
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        user_id = session.get("metadata", {}).get("user_id")
-        customer_id = session.get("customer")
-        subscription_id = session.get("subscription")
-        if not user_id:
-            return {"status": "ignored"}
+    user_id = body.get("custom_field1")
+    if not user_id:
+        return {"status": "ignored"}
 
-        # Fetch subscription end date from Stripe
-        stripe_sub = stripe.Subscription.retrieve(subscription_id)
-        expires_at = datetime.fromtimestamp(
-            stripe_sub["current_period_end"], tz=timezone.utc
-        ).isoformat()
+    transaction_status = body.get("transaction_status")
+    fraud_status = body.get("fraud_status")
 
+    if transaction_status in ("capture", "settlement") and fraud_status in (None, "accept"):
+        sb = _supabase()
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=SUBSCRIPTION_DAYS)).isoformat()
         sb.table("subscriptions").upsert({
             "user_id": user_id,
             "status": "active",
-            "stripe_customer_id": customer_id,
-            "stripe_subscription_id": subscription_id,
             "expires_at": expires_at,
+            "midtrans_order_id": order_id,
+            "midtrans_transaction_id": body.get("transaction_id"),
         }, on_conflict="user_id").execute()
-
-    elif event["type"] == "customer.subscription.deleted":
-        subscription_id = event["data"]["object"]["id"]
-        sb.table("subscriptions").update({
-            "status": "expired",
-            "expires_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("stripe_subscription_id", subscription_id).execute()
-
-    elif event["type"] == "invoice.payment_succeeded":
-        invoice = event["data"]["object"]
-        subscription_id = invoice.get("subscription")
-        # Only process renewal invoices (billing_reason = subscription_cycle), not the first payment
-        # (that's already handled by checkout.session.completed)
-        if subscription_id and invoice.get("billing_reason") == "subscription_cycle":
-            stripe_sub = stripe.Subscription.retrieve(subscription_id)
-            expires_at = datetime.fromtimestamp(
-                stripe_sub["current_period_end"], tz=timezone.utc
-            ).isoformat()
-            sb.table("subscriptions").update({
-                "status": "active",
-                "expires_at": expires_at,
-            }).eq("stripe_subscription_id", subscription_id).execute()
-
-    elif event["type"] == "invoice.payment_failed":
-        subscription_id = event["data"]["object"].get("subscription")
-        if subscription_id:
-            sb.table("subscriptions").update({"status": "expired"}).eq(
-                "stripe_subscription_id", subscription_id
-            ).execute()
 
     return {"status": "ok"}

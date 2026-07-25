@@ -18,3 +18,5 @@ numpy==2.4.3
 requests==2.33.0
 python-dotenv==1.2.2
 slowapi==0.1.9
+supabase==2.15.1
+httpx==0.28.1

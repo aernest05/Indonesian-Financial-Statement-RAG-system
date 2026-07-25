@@ -1,7 +1,7 @@
 """Auth middleware: JWT verification + quota enforcement via Supabase."""
 
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 from fastapi import HTTPException, Request
 from supabase import create_client, Client
 
@@ -17,6 +17,21 @@ def _supabase() -> Client:
     if _client is None:
         _client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     return _client
+
+
+def _is_active(sub_data: dict | None) -> bool:
+    """True if the subscription row is marked active AND not past its expiry.
+
+    Unlike Stripe, Midtrans has no recurring engine that pushes a "subscription
+    ended" event when a paid period lapses, so expiry must be checked here
+    rather than relying solely on the `status` column staying in sync.
+    """
+    if not sub_data or sub_data.get("status") != "active":
+        return False
+    expires_at = sub_data.get("expires_at")
+    if not expires_at:
+        return False
+    return datetime.fromisoformat(expires_at) > datetime.now(timezone.utc)
 
 
 def get_user_id(request: Request) -> str | None:
@@ -57,7 +72,7 @@ def check_and_increment_quota(user_id: str) -> None:
         .execute()
     )
 
-    if sub.data and sub.data.get("status") == "active":
+    if _is_active(sub.data):
         return  # paid user — no quota
 
     # Free user: upsert today's usage row and check count
@@ -104,7 +119,8 @@ def get_subscription_status(user_id: str) -> dict:
         .execute()
     )
 
-    status = sub.data.get("status", "free") if sub.data else "free"
+    raw_status = sub.data.get("status", "free") if sub.data else "free"
+    status = "active" if _is_active(sub.data) else ("expired" if raw_status == "active" else raw_status)
     queries_today = usage.data["count"] if usage.data else 0
 
     return {

@@ -13,7 +13,7 @@ from backend.pipeline import answer_question, prepare_retrieval
 from backend.llm import stream_answer
 from backend.logger import log_query
 from backend.auth import require_auth, check_and_increment_quota, get_subscription_status, _supabase
-from backend.payments import create_checkout_session, handle_webhook
+from backend.payments import create_checkout_session, handle_notification
 
 EXEMPT_IPS = {""}
 
@@ -106,9 +106,9 @@ def checkout(request: Request):
     return {"url": url}
 
 
-@app.post("/webhook")
-async def stripe_webhook(request: Request):
-    return await handle_webhook(request)
+@app.post("/midtrans/notification")
+async def midtrans_notification(request: Request):
+    return await handle_notification(request)
 
 
 # ── Streaming endpoint (Server-Sent Events) ────────────────────────────────────
