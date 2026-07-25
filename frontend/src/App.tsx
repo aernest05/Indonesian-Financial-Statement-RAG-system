@@ -14,7 +14,6 @@ function getPdfUrl(source: string): string | null {
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface ContextDoc {
-  page_content: string
   metadata: Record<string, unknown>
 }
 
@@ -87,11 +86,6 @@ function SourceDocs({ docs }: { docs: ContextDoc[] }) {
                   </a>
                 )}
               </div>
-              <p className="source-text">
-                {doc.page_content.length > 400
-                  ? doc.page_content.slice(0, 400) + '…'
-                  : doc.page_content}
-              </p>
             </div>
           ))}
         </div>
@@ -268,7 +262,10 @@ export default function App() {
         conversation_id: convId,
         role: 'assistant',
         content: assistantMsg.content,
-        context_docs: assistantMsg.context ?? null,
+        // Only the source reference (filename/ticker/page) is persisted, never the
+        // retrieved paragraph text itself — that already lives in the PDFs/index,
+        // so storing a full copy per message would just duplicate it endlessly.
+        context_docs: assistantMsg.context?.map(d => ({ metadata: d.metadata })) ?? null,
         extracted_years: assistantMsg.extractedYears ?? null,
       },
     ])

@@ -832,15 +832,6 @@
   text-overflow: ellipsis;
 }
 
-.source-text {
-  font-size: 0.78rem;
-  color: #475569;
-  line-height: 1.5;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 /* ── Streaming cursor ─────────────────────────────────────────────────── */
 .cursor-blink {
   display: inline-block;
