@@ -445,10 +445,10 @@ export default function App() {
       )}
       <aside className={`sidebar${sidebarOpen ? ' sidebar--open' : ''}`}>
         <div className="sidebar-top">
-          <div className="sidebar-brand">
+          <a href="/" className="sidebar-brand">
             <div className="brand-icon">FS</div>
             <span className="brand-name">FinSage</span>
-          </div>
+          </a>
           <button className="new-chat-btn" onClick={startNewChat}>
             + New chat
           </button>
@@ -578,10 +578,10 @@ export default function App() {
               <path d="M3 12h18M3 6h18M3 18h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
             </svg>
           </button>
-          <div className="topbar-brand">
+          <a href="/" className="topbar-brand">
             <div className="brand-icon brand-icon--sm">FS</div>
             <span>FinSage</span>
-          </div>
+          </a>
           {!isEmpty && (
             <button
               className="topbar-new"
