@@ -529,12 +529,19 @@ export default function App() {
                 <button
                   className="upgrade-btn"
                   onClick={async () => {
-                    const res = await fetch(`${API_BASE}/create-checkout-session`, {
-                      method: 'POST',
-                      headers: { Authorization: `Bearer ${session!.access_token}` },
-                    })
-                    const { url } = await res.json()
-                    window.location.href = url
+                    try {
+                      const res = await fetch(`${API_BASE}/create-checkout-session`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${session!.access_token}` },
+                      })
+                      const data = await res.json()
+                      if (!res.ok || !data.url) {
+                        throw new Error(data.detail || `Error ${res.status}`)
+                      }
+                      window.location.href = data.url
+                    } catch (err) {
+                      alert(`Gagal membuka halaman pembayaran: ${(err as Error).message}`)
+                    }
                   }}
                 >
                   ✦ Upgrade to Pro
