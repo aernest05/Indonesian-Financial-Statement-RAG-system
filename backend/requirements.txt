@@ -20,3 +20,4 @@ python-dotenv==1.2.2
 slowapi==0.1.9
 supabase==2.31.0
 httpx==0.28.1
+google-cloud-storage==3.13.0

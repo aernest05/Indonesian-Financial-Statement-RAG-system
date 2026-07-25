@@ -1,10 +1,11 @@
 import json
 import os
+import re
 import uuid
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from google.cloud import storage as gcs_storage
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -46,7 +47,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/pdfs", StaticFiles(directory="data"), name="pdfs")
+GCS_BUCKET = os.environ.get("GCS_BUCKET", "financial-statement-rag-docs")
+GCS_PDF_PREFIX = "documents/financial-statements"
+
+_gcs_client: gcs_storage.Client | None = None
+
+
+def _gcs() -> gcs_storage.Client:
+    global _gcs_client
+    if _gcs_client is None:
+        _gcs_client = gcs_storage.Client()
+    return _gcs_client
+
+
+@app.get("/pdfs/{filename:path}")
+def get_pdf(filename: str):
+    """Serve a source financial statement PDF from Cloud Storage.
+
+    Accepts the bare filename or a legacy path prefix (e.g. "banks/...")
+    from older source metadata — only the basename is used to look up the
+    object, keyed by the ticker embedded in the filename itself
+    (FinancialStatement-<year>-<period>-<ticker>.pdf). Trailing "(1)"-style
+    duplicate-download suffixes are stripped before lookup.
+    """
+    basename = filename.rsplit("/", 1)[-1]
+    clean_name = re.sub(r"\s*\(\d+\)(?=\.pdf$)", "", basename, flags=re.IGNORECASE)
+    parts = clean_name.removesuffix(".pdf").split("-")
+    if len(parts) < 4:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    ticker = parts[3]
+
+    blob = _gcs().bucket(GCS_BUCKET).blob(f"{GCS_PDF_PREFIX}/{ticker}/{clean_name}")
+    if not blob.exists():
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    return Response(content=blob.download_as_bytes(), media_type="application/pdf")
 
 
 class ChatMessage(BaseModel):
